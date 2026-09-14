@@ -2,12 +2,11 @@
 @tailwind components;
 @tailwind utilities;
 
-/* כפיית רקע לבן וטקסט כהה ללא תלות בהגדרות המכשיר */
 :root {
   color-scheme: light;
 }
 
-body {
-  background-color: #ffffff !important;
-  color: #111827 !important;
+html, body {
+  background-color: #ffffff;
+  color: #111827;
 }

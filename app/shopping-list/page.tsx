@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
 import Link from "next/link";
+import CategoryManager from "@/components/CategoryManager";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
@@ -35,6 +36,7 @@ export default function ShoppingPage() {
 
   async function fetchData() {
     setLoading(true);
+
     // טעינת קטגוריות
     const { data: catData } = await supabase
       .from("shopping_categories")
@@ -86,7 +88,7 @@ export default function ShoppingPage() {
     }
   }
 
-  // עדכון סטטוס נקנה/לא נקנה
+  // עדכון סטטוס סימון V
   async function toggleBought(id: number, currentStatus: boolean) {
     const { error } = await supabase
       .from("shopping_list")
@@ -94,20 +96,20 @@ export default function ShoppingPage() {
       .eq("id", id);
 
     if (!error) {
-      setItems(items.map(item => item.id === id ? { ...item, is_bought: !currentStatus } : item));
+      setItems(items.map((item) => (item.id === id ? { ...item, is_bought: !currentStatus } : item)));
     }
   }
 
-  // מחיקת פריט לחלוטין מהמסד נתונים
+  // מחיקת פריט
   async function deleteItem(id: number) {
     const { error } = await supabase.from("shopping_list").delete().eq("id", id);
     if (!error) {
-      setItems(items.filter(item => item.id !== id));
+      setItems(items.filter((item) => item.id !== id));
     }
   }
 
   // סינון פריטים לפי קטגוריה
-  const filteredItems = items.filter(item => {
+  const filteredItems = items.filter((item) => {
     if (filterCategory === "הכל") return true;
     return item.category === filterCategory;
   });
@@ -142,15 +144,11 @@ export default function ShoppingPage() {
               onChange={(e) => setSelectedCategory(e.target.value)}
               className="p-2.5 border rounded-lg bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
-              {categories.length === 0 ? (
-                <option value="כללי">כללי</option>
-              ) : (
-                categories.map((cat) => (
-                  <option key={cat.id} value={cat.name}>
-                    {cat.name}
-                  </option>
-                ))
-              )}
+              {categories.map((cat) => (
+                <option key={cat.id} value={cat.name}>
+                  {cat.name}
+                </option>
+              ))}
             </select>
             <button
               type="submit"
@@ -223,26 +221,26 @@ export default function ShoppingPage() {
               <div
                 key={item.id}
                 className={`flex items-center justify-between p-3.5 rounded-xl border transition ${
-                  item.is_bought 
-                    ? "bg-gray-100 border-gray-300 opacity-70" 
+                  item.is_bought
+                    ? "bg-gray-100 border-gray-300 opacity-70"
                     : "bg-white border-gray-200 shadow-sm"
                 }`}
               >
-                <div 
+                <div
                   className="flex items-center gap-3 flex-1 cursor-pointer"
                   onClick={() => toggleBought(item.id, item.is_bought)}
                 >
                   <input
                     type="checkbox"
                     checked={item.is_bought}
-                    onChange={() => {}} // מעודכן דרך ה-onClick של השורה
+                    onChange={() => {}}
                     className="w-5 h-5 accent-blue-600 rounded cursor-pointer"
                   />
                   <div className="flex items-center gap-2">
-                    <span 
+                    <span
                       className={`font-medium transition-all ${
-                        item.is_bought 
-                          ? "line-through text-gray-400 decoration-2 decoration-gray-500" 
+                        item.is_bought
+                          ? "line-through text-gray-400 decoration-2 decoration-gray-500"
                           : "text-gray-900"
                       }`}
                     >
@@ -268,6 +266,11 @@ export default function ShoppingPage() {
             ))}
           </div>
         )}
+
+        {/* רכיב ניהול ומיזוג קטגוריות */}
+        <div className="mt-8">
+          <CategoryManager onDataChanged={fetchData} />
+        </div>
       </div>
     </div>
   );

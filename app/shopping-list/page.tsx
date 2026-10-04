@@ -98,7 +98,7 @@ export default function ShoppingPage() {
     }
   }
 
-  // מחיקת פריט
+  // מחיקת פריט לחלוטין מהמסד נתונים
   async function deleteItem(id: number) {
     const { error } = await supabase.from("shopping_list").delete().eq("id", id);
     if (!error) {
@@ -223,29 +223,44 @@ export default function ShoppingPage() {
               <div
                 key={item.id}
                 className={`flex items-center justify-between p-3.5 rounded-xl border transition ${
-                  item.is_bought ? "bg-gray-50 border-gray-200 opacity-60" : "bg-white border-gray-200 shadow-sm"
+                  item.is_bought 
+                    ? "bg-gray-100 border-gray-300 opacity-70" 
+                    : "bg-white border-gray-200 shadow-sm"
                 }`}
               >
-                <div className="flex items-center gap-3">
+                <div 
+                  className="flex items-center gap-3 flex-1 cursor-pointer"
+                  onClick={() => toggleBought(item.id, item.is_bought)}
+                >
                   <input
                     type="checkbox"
                     checked={item.is_bought}
-                    onChange={() => toggleBought(item.id, item.is_bought)}
+                    onChange={() => {}} // מעודכן דרך ה-onClick של השורה
                     className="w-5 h-5 accent-blue-600 rounded cursor-pointer"
                   />
-                  <div>
-                    <span className={`font-medium ${item.is_bought ? "line-through text-gray-500" : "text-gray-900"}`}>
+                  <div className="flex items-center gap-2">
+                    <span 
+                      className={`font-medium transition-all ${
+                        item.is_bought 
+                          ? "line-through text-gray-400 decoration-2 decoration-gray-500" 
+                          : "text-gray-900"
+                      }`}
+                    >
                       {item.item_name}
                     </span>
-                    <span className="mr-2 text-xs px-2 py-0.5 bg-gray-100 text-gray-600 rounded-md">
+                    <span className="text-xs px-2 py-0.5 bg-gray-200 text-gray-700 rounded-md">
                       {item.category || "כללי"}
                     </span>
                   </div>
                 </div>
+
                 <button
-                  onClick={() => deleteItem(item.id)}
-                  className="text-red-500 hover:text-red-700 p-1 text-sm transition"
-                  title="מחק"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    deleteItem(item.id);
+                  }}
+                  className="text-red-500 hover:text-red-700 hover:bg-red-50 p-2 rounded-lg transition text-base"
+                  title="מחק לצמיתות"
                 >
                   🗑️
                 </button>

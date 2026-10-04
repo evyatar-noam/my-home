@@ -1,204 +1,259 @@
-'use client';
+"use client";
 
-import { useState, useEffect } from 'react';
-import { supabase } from '@/lib/supabase';
-import Link from 'next/link';
+import { useEffect, useState } from "react";
+import { createClient } from "@supabase/supabase-js";
+import Link from "next/link";
 
-interface ShoppingItem {
-  id: string;
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
+const supabase = createClient(supabaseUrl, supabaseAnonKey);
+
+interface Item {
+  id: number;
   item_name: string;
   category: string;
-  priority: 'low' | 'medium' | 'high';
-  is_purchased: boolean;
-  notes: string;
+  is_bought: boolean;
 }
 
-export default function ShoppingListPage() {
-  const [items, setItems] = useState<ShoppingItem[]>([]);
-  const [loading, setLoading] = useState(true);
+interface Category {
+  id: number;
+  name: string;
+}
 
-  // טופס
-  const [itemName, setItemName] = useState('');
-  const [category, setCategory] = useState('');
-  const [priority, setPriority] = useState<'low' | 'medium' | 'high'>('medium');
-  const [notes, setNotes] = useState('');
+export default function ShoppingPage() {
+  const [items, setItems] = useState<Item[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [selectedCategory, setSelectedCategory] = useState<string>("כללי");
+  const [newItemName, setNewItemName] = useState<string>("");
+  const [newCatName, setNewCatName] = useState<string>("");
+  const [filterCategory, setFilterCategory] = useState<string>("הכל");
+  const [loading, setLoading] = useState<boolean>(true);
 
   useEffect(() => {
-    fetchItems();
+    fetchData();
   }, []);
 
-  async function fetchItems() {
+  async function fetchData() {
     setLoading(true);
-    const { data, error } = await supabase
-      .from('shopping_list')
-      .select('*')
-      .order('created_at', { ascending: false });
+    // טעינת קטגוריות
+    const { data: catData } = await supabase
+      .from("shopping_categories")
+      .select("*")
+      .order("name", { ascending: true });
 
-    if (!error && data) {
-      setItems(data);
-    }
+    if (catData) setCategories(catData);
+
+    // טעינת פריטים
+    const { data: itemData } = await supabase
+      .from("shopping_list")
+      .select("*")
+      .order("id", { ascending: false });
+
+    if (itemData) setItems(itemData);
     setLoading(false);
   }
 
-  async function addItem(e: React.FormEvent) {
+  // הוספת פריט חדש
+  async function handleAddItem(e: React.FormEvent) {
     e.preventDefault();
-    if (!itemName.trim()) return;
+    if (!newItemName.trim()) return;
 
-    const { error } = await supabase.from('shopping_list').insert([
-      {
-        item_name: itemName,
-        category,
-        priority,
-        notes,
-      },
-    ]);
+    const { data, error } = await supabase
+      .from("shopping_list")
+      .insert([{ item_name: newItemName.trim(), category: selectedCategory, is_bought: false }])
+      .select();
 
-    if (!error) {
-      setItemName('');
-      setCategory('');
-      setPriority('medium');
-      setNotes('');
-      fetchItems();
+    if (!error && data) {
+      setItems([data[0], ...items]);
+      setNewItemName("");
     }
   }
 
-  async function togglePurchased(id: string, currentStatus: boolean) {
+  // הוספת קטגוריה חדשה
+  async function handleAddCategory(e: React.FormEvent) {
+    e.preventDefault();
+    if (!newCatName.trim()) return;
+
+    const { data, error } = await supabase
+      .from("shopping_categories")
+      .insert([{ name: newCatName.trim() }])
+      .select();
+
+    if (!error && data) {
+      setCategories([...categories, data[0]]);
+      setSelectedCategory(data[0].name);
+      setNewCatName("");
+    }
+  }
+
+  // עדכון סטטוס נקנה/לא נקנה
+  async function toggleBought(id: number, currentStatus: boolean) {
     const { error } = await supabase
-      .from('shopping_list')
-      .update({ is_purchased: !currentStatus })
-      .eq('id', id);
+      .from("shopping_list")
+      .update({ is_bought: !currentStatus })
+      .eq("id", id);
 
     if (!error) {
-      fetchItems();
+      setItems(items.map(item => item.id === id ? { ...item, is_bought: !currentStatus } : item));
     }
   }
 
-  async function deleteItem(id: string) {
-    const { error } = await supabase
-      .from('shopping_list')
-      .delete()
-      .eq('id', id);
-
+  // מחיקת פריט
+  async function deleteItem(id: number) {
+    const { error } = await supabase.from("shopping_list").delete().eq("id", id);
     if (!error) {
-      fetchItems();
+      setItems(items.filter(item => item.id !== id));
     }
   }
+
+  // סינון פריטים לפי קטגוריה
+  const filteredItems = items.filter(item => {
+    if (filterCategory === "הכל") return true;
+    return item.category === filterCategory;
+  });
 
   return (
-    <main className="max-w-4xl mx-auto p-6 dir-rtl text-right">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold">רשימת ציוד חסר לבית</h1>
-        <Link href="/" className="text-blue-600 hover:underline">
-          → חזרה לדף הבית
-        </Link>
-      </div>
-
-      {/* טופס הוספה */}
-      <form onSubmit={addItem} className="bg-white p-4 rounded shadow mb-8 border border-gray-200">
-        <h2 className="text-xl font-semibold mb-4">הוספת פריט חסר</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <input
-            type="text"
-            placeholder="שם המוצר (למשל: מגהץ קיטור)"
-            value={itemName}
-            onChange={(e) => setItemName(e.target.value)}
-            className="border p-2 rounded w-full"
-            required
-          />
-          <input
-            type="text"
-            placeholder="קטגוריה (למשל: חשמל, מטבח)"
-            value={category}
-            onChange={(e) => setCategory(e.target.value)}
-            className="border p-2 rounded w-full"
-          />
-          <select
-            value={priority}
-            onChange={(e) => setPriority(e.target.value as any)}
-            className="border p-2 rounded w-full bg-white"
-          >
-            <option value="low">עדיפות נמוכה</option>
-            <option value="medium">עדיפות בינונית</option>
-            <option value="high">עדיפות גבוהה</option>
-          </select>
-          <input
-            type="text"
-            placeholder="הערות / קישור"
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            className="border p-2 rounded w-full"
-          />
+    <div className="min-h-screen bg-white text-gray-900 p-4 md:p-8" dir="rtl">
+      <div className="max-w-3xl mx-auto space-y-6">
+        {/* כותרת וכפתור חזרה */}
+        <div className="flex justify-between items-center border-b pb-4">
+          <h1 className="text-2xl md:text-3xl font-bold flex items-center gap-2">
+            🛒 ציוד חסר לבית
+          </h1>
+          <Link href="/" className="px-3 py-1.5 text-sm bg-gray-100 hover:bg-gray-200 rounded-lg transition">
+            ← חזרה לבית
+          </Link>
         </div>
-        <button
-          type="submit"
-          className="mt-4 bg-green-600 text-white px-6 py-2 rounded hover:bg-green-700 font-bold"
-        >
-          הוסף לרשימה
-        </button>
-      </form>
 
-      {/* טבלת פריטים */}
-      {loading ? (
-        <p>טוען נתונים...</p>
-      ) : (
-        <div className="bg-white rounded shadow overflow-x-auto border border-gray-200">
-          <table className="w-full text-right border-collapse">
-            <thead>
-              <tr className="bg-gray-100 border-b">
-                <th className="p-3">סטטוס</th>
-                <th className="p-3">שם המוצר</th>
-                <th className="p-3">קטגוריה</th>
-                <th className="p-3">עדיפות</th>
-                <th className="p-3">הערות</th>
-                <th className="p-3">פעולות</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="p-4 text-center text-gray-500">
-                    אין פריטים ברשימה עדיין.
-                  </td>
-                </tr>
+        {/* טופס הוספת פריט */}
+        <form onSubmit={handleAddItem} className="bg-gray-50 p-4 rounded-xl border border-gray-200 space-y-3">
+          <h2 className="font-semibold text-lg">הוספת ציוד חדש</h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <input
+              type="text"
+              placeholder="שם המוצר/הציוד..."
+              value={newItemName}
+              onChange={(e) => setNewItemName(e.target.value)}
+              className="p-2.5 border rounded-lg bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              required
+            />
+            <select
+              value={selectedCategory}
+              onChange={(e) => setSelectedCategory(e.target.value)}
+              className="p-2.5 border rounded-lg bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              {categories.length === 0 ? (
+                <option value="כללי">כללי</option>
               ) : (
-                items.map((item) => (
-                  <tr
-                    key={item.id}
-                    className={`border-b ${
-                      item.is_purchased ? 'bg-green-50 line-through text-gray-500' : ''
-                    }`}
-                  >
-                    <td className="p-3">
-                      <input
-                        type="checkbox"
-                        checked={item.is_purchased}
-                        onChange={() => togglePurchased(item.id, item.is_purchased)}
-                        className="w-5 h-5"
-                      />
-                    </td>
-                    <td className="p-3 font-semibold">{item.item_name}</td>
-                    <td className="p-3">{item.category || '-'}</td>
-                    <td className="p-3">
-                      {item.priority === 'high' && '🔴 גבוהה'}
-                      {item.priority === 'medium' && '🟡 בינונית'}
-                      {item.priority === 'low' && '🟢 נמוכה'}
-                    </td>
-                    <td className="p-3">{item.notes || '-'}</td>
-                    <td className="p-3">
-                      <button
-                        onClick={() => deleteItem(item.id)}
-                        className="text-red-600 hover:underline text-sm font-semibold"
-                      >
-                        מחק
-                      </button>
-                    </td>
-                  </tr>
+                categories.map((cat) => (
+                  <option key={cat.id} value={cat.name}>
+                    {cat.name}
+                  </option>
                 ))
               )}
-            </tbody>
-          </table>
+            </select>
+            <button
+              type="submit"
+              className="bg-blue-600 hover:bg-blue-700 text-white font-medium p-2.5 rounded-lg transition"
+            >
+              + הוסף לרשימה
+            </button>
+          </div>
+        </form>
+
+        {/* טופס הוספת קטגוריה חדשה */}
+        <form onSubmit={handleAddCategory} className="bg-gray-50 p-4 rounded-xl border border-gray-200 flex flex-col md:flex-row gap-3 items-center">
+          <span className="text-sm font-medium text-gray-700 whitespace-nowrap">הוספת קטגוריה חדשה:</span>
+          <input
+            type="text"
+            placeholder="שם הקטגוריה..."
+            value={newCatName}
+            onChange={(e) => setNewCatName(e.target.value)}
+            className="p-2 border rounded-lg bg-white text-gray-900 text-sm flex-1 focus:outline-none"
+          />
+          <button
+            type="submit"
+            className="bg-gray-800 hover:bg-black text-white text-sm font-medium px-4 py-2 rounded-lg transition"
+          >
+            + הוסף קטגוריה
+          </button>
+        </form>
+
+        {/* סרגל סינון לפי קטגוריות */}
+        <div className="flex items-center gap-2 overflow-x-auto pb-2">
+          <span className="text-sm font-medium text-gray-600 whitespace-nowrap">סינון:</span>
+          <button
+            onClick={() => setFilterCategory("הכל")}
+            className={`px-3 py-1.5 rounded-full text-sm whitespace-nowrap transition ${
+              filterCategory === "הכל"
+                ? "bg-blue-600 text-white font-medium"
+                : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+            }`}
+          >
+            הכל ({items.length})
+          </button>
+          {categories.map((cat) => {
+            const count = items.filter((i) => i.category === cat.name).length;
+            return (
+              <button
+                key={cat.id}
+                onClick={() => setFilterCategory(cat.name)}
+                className={`px-3 py-1.5 rounded-full text-sm whitespace-nowrap transition ${
+                  filterCategory === cat.name
+                    ? "bg-blue-600 text-white font-medium"
+                    : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                }`}
+              >
+                {cat.name} ({count})
+              </button>
+            );
+          })}
         </div>
-      )}
-    </main>
+
+        {/* רשימת הציוד */}
+        {loading ? (
+          <div className="text-center py-8 text-gray-500">טוען נתונים...</div>
+        ) : filteredItems.length === 0 ? (
+          <div className="text-center py-8 bg-gray-50 rounded-xl text-gray-500 border border-dashed">
+            אין פריטים בקטגוריה זו
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {filteredItems.map((item) => (
+              <div
+                key={item.id}
+                className={`flex items-center justify-between p-3.5 rounded-xl border transition ${
+                  item.is_bought ? "bg-gray-50 border-gray-200 opacity-60" : "bg-white border-gray-200 shadow-sm"
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <input
+                    type="checkbox"
+                    checked={item.is_bought}
+                    onChange={() => toggleBought(item.id, item.is_bought)}
+                    className="w-5 h-5 accent-blue-600 rounded cursor-pointer"
+                  />
+                  <div>
+                    <span className={`font-medium ${item.is_bought ? "line-through text-gray-500" : "text-gray-900"}`}>
+                      {item.item_name}
+                    </span>
+                    <span className="mr-2 text-xs px-2 py-0.5 bg-gray-100 text-gray-600 rounded-md">
+                      {item.category || "כללי"}
+                    </span>
+                  </div>
+                </div>
+                <button
+                  onClick={() => deleteItem(item.id)}
+                  className="text-red-500 hover:text-red-700 p-1 text-sm transition"
+                  title="מחק"
+                >
+                  🗑️
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }

@@ -88,7 +88,7 @@ export default function ShoppingPage() {
     }
   }
 
-  // עדכון סטטוס סימון V
+  // עדכון סטטוס V (נקנה / לא נקנה)
   async function toggleBought(id: number, currentStatus: boolean) {
     const { error } = await supabase
       .from("shopping_list")
@@ -222,7 +222,7 @@ export default function ShoppingPage() {
                 key={item.id}
                 className={`flex items-center justify-between p-3.5 rounded-xl border transition ${
                   item.is_bought
-                    ? "bg-gray-100 border-gray-300 opacity-70"
+                    ? "bg-gray-100 border-gray-300"
                     : "bg-white border-gray-200 shadow-sm"
                 }`}
               >
@@ -238,11 +238,11 @@ export default function ShoppingPage() {
                   />
                   <div className="flex items-center gap-2">
                     <span
-                      className={`font-medium transition-all ${
-                        item.is_bought
-                          ? "line-through text-gray-400 decoration-2 decoration-gray-500"
-                          : "text-gray-900"
-                      }`}
+                      style={{
+                        textDecoration: item.is_bought ? "line-through" : "none",
+                        color: item.is_bought ? "#6b7280" : "#111827",
+                        fontWeight: 500,
+                      }}
                     >
                       {item.item_name}
                     </span>

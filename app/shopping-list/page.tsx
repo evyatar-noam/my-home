@@ -13,8 +13,8 @@ interface Item {
   id: number;
   item_name: string;
   category: string;
-  is_bought?: boolean;
   is_completed?: boolean;
+  is_bought?: boolean;
 }
 
 interface Category {
@@ -38,6 +38,7 @@ export default function ShoppingPage() {
   async function fetchData() {
     setLoading(true);
 
+    // טעינת קטגוריות
     const { data: catData } = await supabase
       .from("shopping_categories")
       .select("*")
@@ -45,41 +46,45 @@ export default function ShoppingPage() {
 
     if (catData) setCategories(catData);
 
+    // טעינת פריטים
     const { data: itemData } = await supabase
       .from("shopping_list")
       .select("*")
       .order("id", { ascending: false });
 
     if (itemData) {
-      // נרמול הסטטוס בין is_bought ל-is_completed
       const normalizedData = itemData.map((item) => ({
         ...item,
-        is_bought: item.is_bought ?? item.is_completed ?? false,
+        is_completed: item.is_completed ?? item.is_bought ?? false,
       }));
       setItems(normalizedData);
     }
     setLoading(false);
   }
 
+  // הוספת פריט חדש
   async function handleAddItem(e: React.FormEvent) {
     e.preventDefault();
     if (!newItemName.trim()) return;
 
     const { data, error } = await supabase
       .from("shopping_list")
-      .insert([{ item_name: newItemName.trim(), category: selectedCategory, is_bought: false, is_completed: false }])
+      .insert([
+        {
+          item_name: newItemName.trim(),
+          category: selectedCategory,
+          is_completed: false,
+        },
+      ])
       .select();
 
     if (!error && data) {
-      const newItem = {
-        ...data[0],
-        is_bought: false,
-      };
-      setItems([newItem, ...items]);
+      setItems([{ ...data[0], is_completed: false }, ...items]);
       setNewItemName("");
     }
   }
 
+  // הוספת קטגוריה חדשה
   async function handleAddCategory(e: React.FormEvent) {
     e.preventDefault();
     if (!newCatName.trim()) return;
@@ -96,36 +101,44 @@ export default function ShoppingPage() {
     }
   }
 
+  // עדכון סטטוס V ושמירה ב-Supabase
   async function toggleBought(id: number, currentStatus: boolean) {
     const newStatus = !currentStatus;
 
-    // עדכון מקומי מידי בממשק
+    // 1. עדכון אופטימי במסך
     setItems((prevItems) =>
-      prevItems.map((item) => (item.id === id ? { ...item, is_bought: newStatus, is_completed: newStatus } : item))
+      prevItems.map((item) =>
+        item.id === id ? { ...item, is_completed: newStatus } : item
+      )
     );
 
-    // ניסיון עדכון העמודה is_bought
-    const { error: error1 } = await supabase
+    // 2. שמירה ב-Supabase בעמודה is_completed
+    const { error } = await supabase
       .from("shopping_list")
-      .update({ is_bought: newStatus })
+      .update({ is_completed: newStatus })
       .eq("id", id);
 
-    // ניסיון גיבוי לעמודה is_completed במידה ואינה נקראת is_bought ב-DB
-    if (error1) {
+    // אם הטבלה עדיין משתמשת בשם הישן is_bought
+    if (error) {
       await supabase
         .from("shopping_list")
-        .update({ is_completed: newStatus })
+        .update({ is_bought: newStatus })
         .eq("id", id);
     }
   }
 
+  // מחיקת פריט
   async function deleteItem(id: number) {
-    const { error } = await supabase.from("shopping_list").delete().eq("id", id);
+    const { error } = await supabase
+      .from("shopping_list")
+      .delete()
+      .eq("id", id);
     if (!error) {
       setItems(items.filter((item) => item.id !== id));
     }
   }
 
+  // סינון פריטים
   const filteredItems = items.filter((item) => {
     if (filterCategory === "הכל") return true;
     return item.category === filterCategory;
@@ -134,16 +147,24 @@ export default function ShoppingPage() {
   return (
     <div className="min-h-screen bg-white text-gray-900 p-4 md:p-8" dir="rtl">
       <div className="max-w-3xl mx-auto space-y-6">
+        {/* כותרת */}
         <div className="flex justify-between items-center border-b pb-4">
           <h1 className="text-2xl md:text-3xl font-bold flex items-center gap-2">
             🛒 ציוד חסר לבית
           </h1>
-          <Link href="/" className="px-3 py-1.5 text-sm bg-gray-100 hover:bg-gray-200 rounded-lg transition">
+          <Link
+            href="/"
+            className="px-3 py-1.5 text-sm bg-gray-100 hover:bg-gray-200 rounded-lg transition"
+          >
             ← חזרה לבית
           </Link>
         </div>
 
-        <form onSubmit={handleAddItem} className="bg-gray-50 p-4 rounded-xl border border-gray-200 space-y-3">
+        {/* הוספת פריט */}
+        <form
+          onSubmit={handleAddItem}
+          className="bg-gray-50 p-4 rounded-xl border border-gray-200 space-y-3"
+        >
           <h2 className="font-semibold text-lg">הוספת ציוד חדש</h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <input
@@ -174,8 +195,14 @@ export default function ShoppingPage() {
           </div>
         </form>
 
-        <form onSubmit={handleAddCategory} className="bg-gray-50 p-4 rounded-xl border border-gray-200 flex flex-col md:flex-row gap-3 items-center">
-          <span className="text-sm font-medium text-gray-700 whitespace-nowrap">הוספת קטגוריה חדשה:</span>
+        {/* הוספת קטגוריה */}
+        <form
+          onSubmit={handleAddCategory}
+          className="bg-gray-50 p-4 rounded-xl border border-gray-200 flex flex-col md:flex-row gap-3 items-center"
+        >
+          <span className="text-sm font-medium text-gray-700 whitespace-nowrap">
+            הוספת קטגוריה חדשה:
+          </span>
           <input
             type="text"
             placeholder="שם הקטגוריה..."
@@ -191,8 +218,11 @@ export default function ShoppingPage() {
           </button>
         </form>
 
+        {/* סרגל סינון */}
         <div className="flex items-center gap-2 overflow-x-auto pb-2">
-          <span className="text-sm font-medium text-gray-600 whitespace-nowrap">סינון:</span>
+          <span className="text-sm font-medium text-gray-600 whitespace-nowrap">
+            סינון:
+          </span>
           <button
             onClick={() => setFilterCategory("הכל")}
             className={`px-3 py-1.5 rounded-full text-sm whitespace-nowrap transition ${
@@ -221,6 +251,7 @@ export default function ShoppingPage() {
           })}
         </div>
 
+        {/* רשימת פריטים */}
         {loading ? (
           <div className="text-center py-8 text-gray-500">טוען נתונים...</div>
         ) : filteredItems.length === 0 ? (
@@ -230,7 +261,7 @@ export default function ShoppingPage() {
         ) : (
           <div className="space-y-2">
             {filteredItems.map((item) => {
-              const isChecked = Boolean(item.is_bought);
+              const isChecked = Boolean(item.is_completed);
               return (
                 <div
                   key={item.id}
@@ -245,7 +276,7 @@ export default function ShoppingPage() {
                     <input
                       type="checkbox"
                       checked={isChecked}
-                      onChange={() => {}} 
+                      onChange={() => {}}
                       className="w-5 h-5 accent-blue-600 rounded cursor-pointer pointer-events-none"
                     />
                     <div className="flex items-center gap-2">
@@ -280,6 +311,7 @@ export default function ShoppingPage() {
           </div>
         )}
 
+        {/* ניהול קטגוריות */}
         <div className="mt-8">
           <CategoryManager onDataChanged={fetchData} />
         </div>

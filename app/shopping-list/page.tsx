@@ -38,7 +38,6 @@ export default function ShoppingPage() {
   async function fetchData() {
     setLoading(true);
 
-    // טעינת קטגוריות
     const { data: catData } = await supabase
       .from("shopping_categories")
       .select("*")
@@ -46,7 +45,6 @@ export default function ShoppingPage() {
 
     if (catData) setCategories(catData);
 
-    // טעינת פריטים
     const { data: itemData } = await supabase
       .from("shopping_list")
       .select("*")
@@ -62,7 +60,6 @@ export default function ShoppingPage() {
     setLoading(false);
   }
 
-  // הוספת פריט חדש
   async function handleAddItem(e: React.FormEvent) {
     e.preventDefault();
     if (!newItemName.trim()) return;
@@ -84,7 +81,6 @@ export default function ShoppingPage() {
     }
   }
 
-  // הוספת קטגוריה חדשה
   async function handleAddCategory(e: React.FormEvent) {
     e.preventDefault();
     if (!newCatName.trim()) return;
@@ -101,33 +97,44 @@ export default function ShoppingPage() {
     }
   }
 
-  // עדכון סטטוס V ושמירה ב-Supabase
   async function toggleBought(id: number, currentStatus: boolean) {
     const newStatus = !currentStatus;
 
     // 1. עדכון אופטימי במסך
     setItems((prevItems) =>
       prevItems.map((item) =>
-        item.id === id ? { ...item, is_completed: newStatus } : item
+        item.id === id
+          ? { ...item, is_completed: newStatus, is_bought: newStatus }
+          : item
       )
     );
 
-    // 2. שמירה ב-Supabase בעמודה is_completed
-    const { error } = await supabase
+    // 2. עדכון ב-Supabase + הדפסת שגיאה מפורטת ב-Console
+    const { data, error } = await supabase
       .from("shopping_list")
       .update({ is_completed: newStatus })
-      .eq("id", id);
+      .eq("id", id)
+      .select();
 
-    // אם הטבלה עדיין משתמשת בשם הישן is_bought
     if (error) {
-      await supabase
+      console.error("❌ Supabase Update Error:", error.message, error.details, error.hint);
+      // ניסיון גיבוי אם השם ב-DB הוא is_bought
+      const { data: data2, error: error2 } = await supabase
         .from("shopping_list")
         .update({ is_bought: newStatus })
-        .eq("id", id);
+        .eq("id", id)
+        .select();
+
+      if (error2) {
+        console.error("❌ Supabase Backup Update Error:", error2.message);
+      } else {
+        console.log("✅ Supabase Update Success (via is_bought):", data2);
+      }
+    } else {
+      console.log("✅ Supabase Update Success (via is_completed):", data);
     }
   }
 
-  // מחיקת פריט
   async function deleteItem(id: number) {
     const { error } = await supabase
       .from("shopping_list")
@@ -138,7 +145,6 @@ export default function ShoppingPage() {
     }
   }
 
-  // סינון פריטים
   const filteredItems = items.filter((item) => {
     if (filterCategory === "הכל") return true;
     return item.category === filterCategory;
@@ -147,7 +153,6 @@ export default function ShoppingPage() {
   return (
     <div className="min-h-screen bg-white text-gray-900 p-4 md:p-8" dir="rtl">
       <div className="max-w-3xl mx-auto space-y-6">
-        {/* כותרת */}
         <div className="flex justify-between items-center border-b pb-4">
           <h1 className="text-2xl md:text-3xl font-bold flex items-center gap-2">
             🛒 ציוד חסר לבית
@@ -160,7 +165,6 @@ export default function ShoppingPage() {
           </Link>
         </div>
 
-        {/* הוספת פריט */}
         <form
           onSubmit={handleAddItem}
           className="bg-gray-50 p-4 rounded-xl border border-gray-200 space-y-3"
@@ -195,7 +199,6 @@ export default function ShoppingPage() {
           </div>
         </form>
 
-        {/* הוספת קטגוריה */}
         <form
           onSubmit={handleAddCategory}
           className="bg-gray-50 p-4 rounded-xl border border-gray-200 flex flex-col md:flex-row gap-3 items-center"
@@ -218,7 +221,6 @@ export default function ShoppingPage() {
           </button>
         </form>
 
-        {/* סרגל סינון */}
         <div className="flex items-center gap-2 overflow-x-auto pb-2">
           <span className="text-sm font-medium text-gray-600 whitespace-nowrap">
             סינון:
@@ -251,7 +253,6 @@ export default function ShoppingPage() {
           })}
         </div>
 
-        {/* רשימת פריטים */}
         {loading ? (
           <div className="text-center py-8 text-gray-500">טוען נתונים...</div>
         ) : filteredItems.length === 0 ? (
@@ -311,7 +312,6 @@ export default function ShoppingPage() {
           </div>
         )}
 
-        {/* ניהול קטגוריות */}
         <div className="mt-8">
           <CategoryManager onDataChanged={fetchData} />
         </div>

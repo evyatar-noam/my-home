@@ -11,6 +11,7 @@ interface Gift {
   category: string;
   price: number | null;
   date: string;
+  is_transferred?: boolean;
 }
 
 type SortField = "guest_name" | "gift_name" | "category" | "price" | "date";
@@ -29,11 +30,19 @@ export default function GiftsPage() {
     "מוצרי חשמל",
     "כלי מטבח",
     "עיצוב הבית",
+    "Gift card",
   ]);
 
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState("הכל");
   const [editingId, setEditingId] = useState<number | null>(null);
+
+  // מצבים להעברה לגיפטקארדים (Modal)
+  const [selectedGiftForCard, setSelectedGiftForCard] = useState<Gift | null>(null);
+  const [cardNumber, setCardNumber] = useState("");
+  const [expirationDate, setExpirationDate] = useState("");
+  const [notes, setNotes] = useState("");
+  const [isSubmittingCard, setIsSubmittingCard] = useState(false);
 
   // מצבי מיון
   const [sortField, setSortField] = useState<SortField>("date");
@@ -156,6 +165,59 @@ export default function GiftsPage() {
     }
   };
 
+  // מעבר לטבלת גיפטקארדים
+  const handleTransferToGiftCard = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedGiftForCard) return;
+
+    setIsSubmittingCard(true);
+
+    const amount = selectedGiftForCard.price || 0;
+
+    // 1. הוספה לטבלת gift_cards ב-Supabase
+    const { error: cardError } = await supabase.from("gift_cards").insert([
+      {
+        company_name: selectedGiftForCard.gift_name,
+        initial_balance: amount,
+        current_balance: amount,
+        card_number: cardNumber || null,
+        expiration_date: expirationDate || null,
+        notes: notes ? `${notes} (מאת: ${selectedGiftForCard.guest_name})` : `מאת: ${selectedGiftForCard.guest_name}`,
+      },
+    ]);
+
+    if (cardError) {
+      console.error("שגיאה בהעברת הגיפטקארד:", cardError.message);
+      alert("אירעה שגיאה בעת שמירת הגיפטקארד: " + cardError.message);
+      setIsSubmittingCard(false);
+      return;
+    }
+
+    // 2. עדכון המתנה ככזו שהועברה
+    const { error: giftError } = await supabase
+      .from("gifts")
+      .update({ is_transferred: true })
+      .eq("id", selectedGiftForCard.id);
+
+    if (giftError) {
+      console.warn("תשומת לב: הגיפטקארד נוצר אך עדכון סטטוס המתנה נכשל (ודא שקיימת עמודה is_transferred ב-gifts).", giftError.message);
+    }
+
+    // עדכון אופטימי ב-State
+    setGifts((prev) =>
+      prev.map((g) =>
+        g.id === selectedGiftForCard.id ? { ...g, is_transferred: true } : g
+      )
+    );
+
+    setIsSubmittingCard(false);
+    setSelectedGiftForCard(null);
+    setCardNumber("");
+    setExpirationDate("");
+    setNotes("");
+    alert("💳 הגיפטקארד הועבר בהצלחה לטבלת הגיפטקארדים!");
+  };
+
   const exportToExcel = () => {
     const headers = ["שם האורח", "המתנה", "קטגוריה", "סכום/מחיר", "תאריך"];
     const rows = sortedGifts.map((g) => [
@@ -179,7 +241,6 @@ export default function GiftsPage() {
     document.body.removeChild(link);
   };
 
-  // טיפול בלחיצה על כותרת למיון
   const handleSort = (field: SortField) => {
     if (sortField === field) {
       setSortOrder(sortOrder === "asc" ? "desc" : "asc");
@@ -189,7 +250,6 @@ export default function GiftsPage() {
     }
   };
 
-  // סינון לפי חיפוש וקטגוריה
   const filteredGifts = gifts.filter((gift) => {
     const matchesSearch =
       gift.guest_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -199,12 +259,10 @@ export default function GiftsPage() {
     return matchesSearch && matchesCategory;
   });
 
-  // מיון רשימת המתנות המסוננות
   const sortedGifts = [...filteredGifts].sort((a, b) => {
     let aValue: any = a[sortField];
     let bValue: any = b[sortField];
 
-    // טיפול במחירים ריקים (null) כך שיופיעו תמיד בסוף במיון
     if (sortField === "price") {
       if (aValue === null) aValue = sortOrder === "asc" ? Infinity : -Infinity;
       if (bValue === null) bValue = sortOrder === "asc" ? Infinity : -Infinity;
@@ -426,7 +484,20 @@ export default function GiftsPage() {
                       {gift.price !== null ? `₪${gift.price}` : <span className="text-gray-300 font-normal">-</span>}
                     </td>
                     <td className="p-4 text-gray-500 text-sm">{gift.date}</td>
-                    <td className="p-4 text-center flex justify-center gap-2">
+                    <td className="p-4 text-center flex justify-center items-center gap-2">
+                      {gift.category === "Gift card" && (
+                        <button
+                          onClick={() => setSelectedGiftForCard(gift)}
+                          disabled={gift.is_transferred}
+                          className={`px-3 py-1 text-xs rounded-lg font-medium transition ${
+                            gift.is_transferred
+                              ? "bg-gray-100 text-gray-400 cursor-not-allowed"
+                              : "bg-purple-600 hover:bg-purple-700 text-white shadow-sm"
+                          }`}
+                        >
+                          {gift.is_transferred ? "✓ הועבר" : "💳 העבר לגיפטקארדים"}
+                        </button>
+                      )}
                       <button
                         onClick={() => handleEditClick(gift)}
                         className="px-3 py-1 bg-amber-100 hover:bg-amber-200 text-amber-800 text-xs rounded-lg font-medium transition"
@@ -447,6 +518,88 @@ export default function GiftsPage() {
           </table>
         </div>
       </div>
+
+      {/* חלון קופץ להעברת גיפטקארד */}
+      {selectedGiftForCard && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-xl border border-gray-100 space-y-4 text-right" dir="rtl">
+            <div className="flex justify-between items-center border-b pb-3">
+              <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+                <span>💳</span> העברת גיפטקארד לניהול
+              </h3>
+              <button
+                onClick={() => setSelectedGiftForCard(null)}
+                className="text-gray-400 hover:text-gray-600 font-bold text-lg"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="bg-purple-50 p-3 rounded-xl text-xs text-purple-900 space-y-1">
+              <p><strong>חברה/שם:</strong> {selectedGiftForCard.gift_name}</p>
+              <p><strong>מאת:</strong> {selectedGiftForCard.guest_name}</p>
+              <p><strong>סכום מתנה:</strong> ₪{selectedGiftForCard.price || 0}</p>
+            </div>
+
+            <form onSubmit={handleTransferToGiftCard} className="space-y-4">
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">
+                  מספר כרטיס / קוד גיפטקארד (אופציונלי):
+                </label>
+                <input
+                  type="text"
+                  value={cardNumber}
+                  onChange={(e) => setCardNumber(e.target.value)}
+                  placeholder="למשל: 1234-5678-9000"
+                  className="w-full p-2.5 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-purple-500 outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">
+                  תאריך תוקף (אופציונלי):
+                </label>
+                <input
+                  type="date"
+                  value={expirationDate}
+                  onChange={(e) => setExpirationDate(e.target.value)}
+                  className="w-full p-2.5 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-purple-500 outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">
+                  הערות נוספות:
+                </label>
+                <input
+                  type="text"
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder="למשל: תקף ברשתות ספציפיות..."
+                  className="w-full p-2.5 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-purple-500 outline-none"
+                />
+              </div>
+
+              <div className="flex gap-2 justify-end pt-2">
+                <button
+                  type="button"
+                  onClick={() => setSelectedGiftForCard(null)}
+                  className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-sm font-medium transition"
+                >
+                  ביטול
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmittingCard}
+                  className="px-5 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-sm font-medium shadow-md transition disabled:opacity-50"
+                >
+                  {isSubmittingCard ? "מעביר..." : "שמור והעבר לגיפטקארדים"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

@@ -13,7 +13,8 @@ interface Item {
   id: number;
   item_name: string;
   category: string;
-  is_bought: boolean;
+  is_bought?: boolean;
+  is_completed?: boolean;
 }
 
 interface Category {
@@ -37,7 +38,6 @@ export default function ShoppingPage() {
   async function fetchData() {
     setLoading(true);
 
-    // טעינת קטגוריות
     const { data: catData } = await supabase
       .from("shopping_categories")
       .select("*")
@@ -45,33 +45,41 @@ export default function ShoppingPage() {
 
     if (catData) setCategories(catData);
 
-    // טעינת פריטים
     const { data: itemData } = await supabase
       .from("shopping_list")
       .select("*")
       .order("id", { ascending: false });
 
-    if (itemData) setItems(itemData);
+    if (itemData) {
+      // נרמול הסטטוס בין is_bought ל-is_completed
+      const normalizedData = itemData.map((item) => ({
+        ...item,
+        is_bought: item.is_bought ?? item.is_completed ?? false,
+      }));
+      setItems(normalizedData);
+    }
     setLoading(false);
   }
 
-  // הוספת פריט חדש
   async function handleAddItem(e: React.FormEvent) {
     e.preventDefault();
     if (!newItemName.trim()) return;
 
     const { data, error } = await supabase
       .from("shopping_list")
-      .insert([{ item_name: newItemName.trim(), category: selectedCategory, is_bought: false }])
+      .insert([{ item_name: newItemName.trim(), category: selectedCategory, is_bought: false, is_completed: false }])
       .select();
 
     if (!error && data) {
-      setItems([data[0], ...items]);
+      const newItem = {
+        ...data[0],
+        is_bought: false,
+      };
+      setItems([newItem, ...items]);
       setNewItemName("");
     }
   }
 
-  // הוספת קטגוריה חדשה
   async function handleAddCategory(e: React.FormEvent) {
     e.preventDefault();
     if (!newCatName.trim()) return;
@@ -88,19 +96,29 @@ export default function ShoppingPage() {
     }
   }
 
-  // עדכון סטטוס V (נקנה / לא נקנה)
   async function toggleBought(id: number, currentStatus: boolean) {
-    const { error } = await supabase
+    const newStatus = !currentStatus;
+
+    // עדכון מקומי מידי בממשק
+    setItems((prevItems) =>
+      prevItems.map((item) => (item.id === id ? { ...item, is_bought: newStatus, is_completed: newStatus } : item))
+    );
+
+    // ניסיון עדכון העמודה is_bought
+    const { error: error1 } = await supabase
       .from("shopping_list")
-      .update({ is_bought: !currentStatus })
+      .update({ is_bought: newStatus })
       .eq("id", id);
 
-    if (!error) {
-      setItems(items.map((item) => (item.id === id ? { ...item, is_bought: !currentStatus } : item)));
+    // ניסיון גיבוי לעמודה is_completed במידה ואינה נקראת is_bought ב-DB
+    if (error1) {
+      await supabase
+        .from("shopping_list")
+        .update({ is_completed: newStatus })
+        .eq("id", id);
     }
   }
 
-  // מחיקת פריט
   async function deleteItem(id: number) {
     const { error } = await supabase.from("shopping_list").delete().eq("id", id);
     if (!error) {
@@ -108,7 +126,6 @@ export default function ShoppingPage() {
     }
   }
 
-  // סינון פריטים לפי קטגוריה
   const filteredItems = items.filter((item) => {
     if (filterCategory === "הכל") return true;
     return item.category === filterCategory;
@@ -117,7 +134,6 @@ export default function ShoppingPage() {
   return (
     <div className="min-h-screen bg-white text-gray-900 p-4 md:p-8" dir="rtl">
       <div className="max-w-3xl mx-auto space-y-6">
-        {/* כותרת וכפתור חזרה */}
         <div className="flex justify-between items-center border-b pb-4">
           <h1 className="text-2xl md:text-3xl font-bold flex items-center gap-2">
             🛒 ציוד חסר לבית
@@ -127,7 +143,6 @@ export default function ShoppingPage() {
           </Link>
         </div>
 
-        {/* טופס הוספת פריט */}
         <form onSubmit={handleAddItem} className="bg-gray-50 p-4 rounded-xl border border-gray-200 space-y-3">
           <h2 className="font-semibold text-lg">הוספת ציוד חדש</h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -159,7 +174,6 @@ export default function ShoppingPage() {
           </div>
         </form>
 
-        {/* טופס הוספת קטגוריה חדשה */}
         <form onSubmit={handleAddCategory} className="bg-gray-50 p-4 rounded-xl border border-gray-200 flex flex-col md:flex-row gap-3 items-center">
           <span className="text-sm font-medium text-gray-700 whitespace-nowrap">הוספת קטגוריה חדשה:</span>
           <input
@@ -177,7 +191,6 @@ export default function ShoppingPage() {
           </button>
         </form>
 
-        {/* סרגל סינון לפי קטגוריות */}
         <div className="flex items-center gap-2 overflow-x-auto pb-2">
           <span className="text-sm font-medium text-gray-600 whitespace-nowrap">סינון:</span>
           <button
@@ -208,7 +221,6 @@ export default function ShoppingPage() {
           })}
         </div>
 
-        {/* רשימת הציוד */}
         {loading ? (
           <div className="text-center py-8 text-gray-500">טוען נתונים...</div>
         ) : filteredItems.length === 0 ? (
@@ -217,57 +229,57 @@ export default function ShoppingPage() {
           </div>
         ) : (
           <div className="space-y-2">
-            {filteredItems.map((item) => (
-              <div
-                key={item.id}
-                className={`flex items-center justify-between p-3.5 rounded-xl border transition ${
-                  item.is_bought
-                    ? "bg-gray-100 border-gray-300"
-                    : "bg-white border-gray-200 shadow-sm"
-                }`}
-              >
+            {filteredItems.map((item) => {
+              const isChecked = Boolean(item.is_bought);
+              return (
                 <div
-                  className="flex items-center gap-3 flex-1 cursor-pointer"
-                  onClick={() => toggleBought(item.id, item.is_bought)}
+                  key={item.id}
+                  onClick={() => toggleBought(item.id, isChecked)}
+                  className={`flex items-center justify-between p-3.5 rounded-xl border transition cursor-pointer select-none ${
+                    isChecked
+                      ? "bg-gray-100 border-gray-300"
+                      : "bg-white border-gray-200 shadow-sm hover:border-gray-300"
+                  }`}
                 >
-                  <input
-                    type="checkbox"
-                    checked={item.is_bought}
-                    onChange={() => {}}
-                    className="w-5 h-5 accent-blue-600 rounded cursor-pointer"
-                  />
-                  <div className="flex items-center gap-2">
-                    <span
-                      style={{
-                        textDecoration: item.is_bought ? "line-through" : "none",
-                        color: item.is_bought ? "#6b7280" : "#111827",
-                        fontWeight: 500,
-                      }}
-                    >
-                      {item.item_name}
-                    </span>
-                    <span className="text-xs px-2 py-0.5 bg-gray-200 text-gray-700 rounded-md">
-                      {item.category || "כללי"}
-                    </span>
+                  <div className="flex items-center gap-3 flex-1">
+                    <input
+                      type="checkbox"
+                      checked={isChecked}
+                      onChange={() => {}} 
+                      className="w-5 h-5 accent-blue-600 rounded cursor-pointer pointer-events-none"
+                    />
+                    <div className="flex items-center gap-2">
+                      <span
+                        style={{
+                          textDecoration: isChecked ? "line-through" : "none",
+                          color: isChecked ? "#6b7280" : "#111827",
+                          fontWeight: 500,
+                        }}
+                      >
+                        {item.item_name}
+                      </span>
+                      <span className="text-xs px-2 py-0.5 bg-gray-200 text-gray-700 rounded-md">
+                        {item.category || "כללי"}
+                      </span>
+                    </div>
                   </div>
-                </div>
 
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    deleteItem(item.id);
-                  }}
-                  className="text-red-500 hover:text-red-700 hover:bg-red-50 p-2 rounded-lg transition text-base"
-                  title="מחק לצמיתות"
-                >
-                  🗑️
-                </button>
-              </div>
-            ))}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      deleteItem(item.id);
+                    }}
+                    className="text-red-500 hover:text-red-700 hover:bg-red-50 p-2 rounded-lg transition text-base"
+                    title="מחק לצמיתות"
+                  >
+                    🗑️
+                  </button>
+                </div>
+              );
+            })}
           </div>
         )}
 
-        {/* רכיב ניהול ומיזוג קטגוריות */}
         <div className="mt-8">
           <CategoryManager onDataChanged={fetchData} />
         </div>
